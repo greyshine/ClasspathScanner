@@ -2,8 +2,8 @@ package de.greyshine.utils;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URI;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Method;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -19,126 +19,206 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import com.sun.nio.zipfs.ZipPath;
-
-import javax.management.RuntimeErrorException;
-
 import sun.misc.Launcher;
-import sun.misc.URLClassPath;
 
+/**
+ * Classpath scanning and filtering.
+ * 
+ * @author dirk schumacher
+ */
 @SuppressWarnings({ "restriction", "unused" })
 public class ClasspathScanner {
+
+	/**
+	 * Handler for handling a resource entry on the classpath
+	 */
+	public static interface IHandler {
+
+		/**
+		 * @param inResource
+		 */
+		void handle(IResource inResource);
+	}
+
+	/**
+	 * A representation for a resource on the classpath
+	 */
+	public static interface IResource {
+
+		/**
+		 * @return {@link ClassLoader} which declares this {@link IResource}
+		 */
+		ClassLoader getClassloader();
+
+		/**
+		 * @return
+		 */
+		Path getPath();
+
+		/**
+		 * @return
+		 */
+		String getResourceName();
+
+		/**
+		 * @return <code>true</code> if candidate to be loaded by its
+		 *         {@link ClassLoader} otherwise <code>false</code>
+		 */
+		boolean isClassResource();
+	}
 
 	private final List<String> messages = new ArrayList<String>();
 	private final List<Path> paths = new ArrayList<>();
 	private final List<String> classNames = new ArrayList<>();
 	private long scantime = -1;
 	private List<ClassLoader> classLoaders = new ArrayList<>();
-	
-	public ClasspathScanner() {
-		
-		// for java.lang
-		final URL[] theUrls = Launcher.getBootstrapClassPath().getURLs(); 
-		
-		
-		classLoaders.add( new URLClassLoader( theUrls ) { public String toString() {
-			return super.toString()+" [urls="+ Arrays.asList( theUrls ) +"]";
-			
-		}; } );
-		classLoaders.add( ClassLoader.getSystemClassLoader() );
-		classLoaders.add( Thread.currentThread().getContextClassLoader() );
-		
-		addClass( getClass() );
-		
-		addSystemPropertyPaths("java.class.path");
-		
-		
-	}
-	
-	public ClasspathScanner addSystemPropertyPaths(String inKey) {
-		
-		String value = System.getProperty( inKey );
-		
-		if ( value == null || value.trim().isEmpty() ) { return this; }
-		
-		for (String aPath : value.split( ""+File.pathSeparatorChar ,-1)) {
+	private List<String> beginResourceNameFilters = new ArrayList<>(0);
+	private boolean filterOnlyResources = false;
+	private boolean filterOnlyClasses = false;
+	private Class<? extends Annotation> methodAnnotation;
+	private Class<? extends Annotation> typeAnnotation;
+	private boolean excludeInnerClasses = false;
 
-			if ( aPath == null || aPath.trim().isEmpty() ) { continue; }
-			final File theFile = new File( aPath );
-			if ( !theFile.exists() ) { continue; }
-			
+	public ClasspathScanner() {
+
+		// for java.lang
+		final URL[] theUrls = Launcher.getBootstrapClassPath().getURLs();
+
+		classLoaders.add(new URLClassLoader(theUrls) {
+			public String toString() {
+				return super.toString() + " [urls=" + Arrays.asList(theUrls) + "]";
+
+			};
+		});
+		classLoaders.add(ClassLoader.getSystemClassLoader());
+		classLoaders.add(Thread.currentThread().getContextClassLoader());
+
+		addClass(getClass());
+
+		addSystemPropertyPaths("java.class.path");
+	}
+
+	/**
+	 * Same as calling the constructor
+	 * 
+	 * @return
+	 */
+	public static ClasspathScanner create() {
+		return new ClasspathScanner();
+	}
+
+	/**
+	 * Inspects a {@link System}.getProperty by key and registers each path part
+	 * as on the classpath
+	 * 
+	 * @param inKey
+	 * @return
+	 */
+	public ClasspathScanner addSystemPropertyPaths(String inKey) {
+
+		String value = System.getProperty(inKey);
+
+		if (value == null || value.trim().isEmpty()) {
+			return this;
+		}
+
+		for (String aPath : value.split("" + File.pathSeparatorChar, -1)) {
+
+			if (aPath == null || aPath.trim().isEmpty()) {
+				continue;
+			}
+			final File theFile = new File(aPath);
+			if (!theFile.exists()) {
+				continue;
+			}
+
 			try {
-				
+
 				final URL theUrl = theFile.toURI().toURL();
-				
-				classLoaders.add( new URLClassLoader( new URL[] { theUrl } ) {
-					
+
+				classLoaders.add(new URLClassLoader(new URL[] { theUrl }) {
+
 					public String toString() {
-						
-						return super.toString() +" [url="+ theUrl.toExternalForm() +"]";
+
+						return super.toString() + " [url=" + theUrl.toExternalForm() + "]";
 					};
-					
-				} );
+
+				});
 			} catch (Exception e) {
 				// swallow
 			}
 		}
-		
+
 		return this;
 	}
 
+	/**
+	 * register a {@link Class} or better its {@link ClassLoader} to ensure to
+	 * be in the scan.
+	 * 
+	 * @param inClass
+	 * @return
+	 */
 	public ClasspathScanner addClass(Class<?> inClass) {
-		
-		if ( inClass == null ) { return this; }
-		
+
+		if (inClass == null) {
+			return this;
+		}
+
 		ClassLoader theCl = inClass.getClassLoader();
 		while (theCl != null) {
 
-			if ( !classLoaders.contains( theCl ) ) {
-				
-				classLoaders.add( theCl );
+			if (!classLoaders.contains(theCl)) {
+
+				classLoaders.add(theCl);
 			}
 
 			theCl = (ClassLoader) theCl.getParent();
 		}
 
 		return this;
-		
-	}
-	
-	public List<ClassLoader> getClassLoaders() {
-		
-		return new ArrayList<>( classLoaders );
-	}
-	
-	@Override
-	public String toString() {
-		return getClass().getName() +" [paths="+ paths.size() +", scantime="+ scantime +"ms, messages="+ messages.size() +", classLoaders="+ classLoaders +"]";
+
 	}
 
+	/**
+	 * @return the {@link ClassLoader}s included into listing all the
+	 *         {@link URL}s
+	 */
+	public List<ClassLoader> getClassLoaders() {
+
+		return new ArrayList<>(classLoaders);
+	}
+
+	/**
+	 * Actual scanning and filtering of all resources on the listed
+	 * {@link ClassLoader}s
+	 * 
+	 * @param inHandler
+	 * @return
+	 */
 	public ClasspathScanner scan(IHandler inHandler) {
 
 		final long starttime = System.currentTimeMillis();
-		
+
 		reset();
 
 		for (ClassLoader aClassLoader : classLoaders) {
-			
-			if ( aClassLoader instanceof URLClassLoader ) {
-				
-				scanByClassLoader(inHandler, (URLClassLoader)aClassLoader);
-			
+
+			if (aClassLoader instanceof URLClassLoader) {
+
+				scanByClassLoader(inHandler, (URLClassLoader) aClassLoader);
+
 			} else {
-			
-				messages.add( "unsupported ClassLaoder: "+ aClassLoader );
+
+				messages.add("unsupported ClassLaoder: " + aClassLoader);
 			}
 		}
-		
+
 		this.scantime = System.currentTimeMillis() - starttime;
 
 		return this;
 	}
-	
+
 	private void reset() {
 
 		classNames.clear();
@@ -147,38 +227,44 @@ public class ClasspathScanner {
 	}
 
 	private void scanByClassLoader(IHandler inHandler, URLClassLoader inCl) {
-		
-			for (URL aUrl : inCl.getURLs()) {
 
-				if (aUrl.getFile() != null && !aUrl.getFile().isEmpty()) {
+		for (URL aUrl : inCl.getURLs()) {
 
-					final File theFile = new File(aUrl.getFile());
+			if (aUrl.getFile() != null && !aUrl.getFile().isEmpty()) {
 
-					if (theFile.exists() && theFile.isDirectory()) {
+				final File theFile = new File(aUrl.getFile());
 
-						scanByDirectory(inHandler, inCl, aUrl, theFile);
+				if (theFile.exists() && theFile.isDirectory()) {
 
-					} else if (theFile.exists() && theFile.isFile() && theFile.getName().toLowerCase().endsWith(".jar")) {
+					scanByDirectory(inHandler, inCl, aUrl, theFile);
 
-						scanByJar(inHandler, inCl, aUrl, theFile);
+				} else if (theFile.exists() && theFile.isFile() && theFile.getName().toLowerCase().endsWith(".jar")) {
 
-					} else {
+					scanByJar(inHandler, inCl, aUrl, theFile);
 
-						messages.add("not found: " + aUrl);
-					}
+				} else {
 
+					messages.add("not found: " + aUrl);
 				}
+
 			}
+		}
 	}
 
+	/**
+	 * @return listing of messages during scanning
+	 */
 	public List<String> getMessages() {
 		return new ArrayList<>(messages);
 	}
 
+	/**
+	 * @return amount of scanned resources
+	 */
 	public int getResourcesCount() {
 		return paths.size();
 	}
-	
+
 	public long getScantime() {
 		return scantime;
 	}
@@ -196,12 +282,13 @@ public class ClasspathScanner {
 
 	private void scanByJar(IHandler inHandler, URLClassLoader inCl, URL aUrl, File inJarFile) {
 
+
+		final List<Path> q = new ArrayList<>();
+
 		try {
-
+			
 			final FileSystem theFs = FileSystems.newFileSystem(Paths.get(aUrl.toURI()), null);
-
-			final List<Path> q = new ArrayList<>();
-
+			
 			Files.walkFileTree(theFs.getRootDirectories().iterator().next(), new FileVisitor<Path>() {
 
 				@Override
@@ -227,12 +314,10 @@ public class ClasspathScanner {
 					return FileVisitResult.CONTINUE;
 				}
 			});
-
 		} catch (Exception e) {
-
-			throw new RuntimeException(e);
+			
+			messages.add( "failed scanning jar: "+ inJarFile +": "+ e );
 		}
-
 	}
 
 	private void scanByDirectory(IHandler inHandler, URLClassLoader inCl, URL aUrl, File inDirFile) {
@@ -278,17 +363,38 @@ public class ClasspathScanner {
 			final Path inPath) {
 
 		paths.add(inPath);
-		
-		if ( inHandler == null ) { return; }
 
-		inHandler.handle(new IResource() {
-			
-			final boolean isClassResource = inResourceName.toLowerCase().endsWith( ".class" );
-			final String resourceName;
-			
-			{
-				resourceName = !isClassResource ? inResourceName : inResourceName.substring(0, inResourceName.length() - 6).replace('/', '.').replace('\\', '.');
+		if (inHandler == null) {
+			return;
+		}
+
+		final boolean isClassResource = inResourceName.toLowerCase().endsWith(".class");
+		final String resourceName = !isClassResource ? inResourceName
+				: inResourceName.substring(0, inResourceName.length() - 6).replace('/', '.').replace('\\', '.');
+
+		if (filterOnlyClasses && !isClassResource) {
+			return;
+		}
+		if (filterOnlyResources && isClassResource) {
+			return;
+		}
+		if (typeAnnotation != null && !isClassResource) {
+			return;
+		}
+		if (methodAnnotation != null && !isClassResource) {
+			return;
+		}
+		if (excludeInnerClasses && isClassResource && resourceName.indexOf('$') > -1) {
+			return;
+		}
+
+		for (String beginFilterName : beginResourceNameFilters) {
+			if (!resourceName.startsWith(beginFilterName)) {
+				return;
 			}
+		}
+
+		final IResource theResource = new IResource() {
 
 			@Override
 			public ClassLoader getClassloader() {
@@ -309,28 +415,134 @@ public class ClasspathScanner {
 			public boolean isClassResource() {
 				return isClassResource;
 			}
-			
+
 			public String toString() {
-				
-				return IResource.class.getSimpleName()+" [resourceName="+ resourceName +", path="+ inPath +", isClassResource="+ isClassResource +", classLoader="+ inCl.getClass().getName() +"]";
+
+				return IResource.class.getSimpleName() + " [resourceName=" + resourceName + ", path=" + inPath
+						+ ", isClassResource=" + isClassResource + ", classLoader=" + inCl.getClass().getName() + "]";
 			}
-			
-		});
 
+		};
+
+		try {
+
+			if (isClassResource && typeAnnotation != null) {
+
+				final Class<?> theClass = inCl.loadClass(resourceName);
+
+				if (theClass.getDeclaredAnnotation(typeAnnotation) == null) {
+
+					return;
+				}
+			}
+
+		} catch (Throwable e) {
+
+			messages.add("failed to load class: " + e);
+			return;
+		}
+
+		try {
+
+			if (isClassResource && methodAnnotation != null) {
+
+				final Class<?> theClass = inCl.loadClass(resourceName);
+
+				boolean isFound = false;
+
+				for (Method aMethod : theClass.getDeclaredMethods()) {
+
+					System.out.println(aMethod);
+
+					if (aMethod.getDeclaredAnnotation(methodAnnotation) != null) {
+						isFound = true;
+						break;
+					}
+				}
+
+				if (isFound == false) {
+					return;
+				}
+			}
+
+		} catch (Throwable e) {
+
+			messages.add("failed to scan methods at class " + resourceName + " : " + e);
+			return;
+		}
+
+		inHandler.handle(theResource);
 	}
 
-	public static interface IHandler {
-		void handle(IResource inResource);
+	public ClasspathScanner filterBeginResourceName(String beginResourceName) {
+
+		if (beginResourceName != null) {
+
+			beginResourceNameFilters.add(beginResourceName);
+		}
+
+		return this;
 	}
 
-	public static interface IResource {
-		ClassLoader getClassloader();
+	/**
+	 * @return handle only {@link Class}es
+	 */
+	public ClasspathScanner filterClassOnly() {
 
-		Path getPath();
+		filterOnlyClasses = true;
+		filterOnlyResources = false;
 
-		String getResourceName();
-
-		boolean isClassResource();
+		return this;
 	}
 
+	/**
+	 * @return handle only resources and never {@link Class}es
+	 */
+	public ClasspathScanner filterResourceOnly() {
+
+		filterOnlyClasses = false;
+		filterOnlyResources = true;
+
+		return this;
+	}
+
+	/**
+	 * Let a scannable {@link Class} candidate have at least one declared method
+	 * with the given {@link Annotation}
+	 * 
+	 * @param inAnnotationClass
+	 * @return
+	 */
+	public ClasspathScanner filterMethodAnnotation(Class<? extends Annotation> inAnnotationClass) {
+
+		methodAnnotation = inAnnotationClass;
+		return this;
+	}
+
+	/**
+	 * Let a scannable {@link Class} candidate have declare the given
+	 * {@link Annotation}
+	 * 
+	 * @param inAnnotationClass
+	 * @return
+	 */
+	public ClasspathScanner filterTypeAnnotation(Class<? extends Annotation> inAnnotationClass) {
+
+		typeAnnotation = inAnnotationClass;
+		return this;
+	}
+
+	/**
+	 * Skip scanning on inner {@link Class}es
+	 */
+	public ClasspathScanner filterExcludeInnerClasses() {
+		excludeInnerClasses = true;
+		return this;
+	}
+
+	@Override
+	public String toString() {
+		return getClass().getName() + " [paths=" + paths.size() + ", scantime=" + scantime + "ms, messages="
+				+ messages.size() + ", classLoaders=" + classLoaders + "]";
+	}
 }

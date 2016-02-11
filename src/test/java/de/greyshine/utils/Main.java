@@ -1,18 +1,3 @@
-# ClasspathScanner
-Scanning and filtering the Java classpath.
-
-Goal: One class. No dependencies.
-
-Features:
-
-* filter by class annotation
-* filter by method annotation
-* filter not to have subclasses
-* filter only classes
-* filter only resources (not classes)
-
-```java
-
 package de.greyshine.utils;
 
 import de.greyshine.utils.ClasspathScanner.IHandler;
@@ -42,13 +27,6 @@ public class Main {
 						}
 					}
 				});
-		}
 	}
-```
 
-
-see `mvn test` for more example
-
-
-
- 
+}
