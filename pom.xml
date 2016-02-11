@@ -15,9 +15,6 @@
 	<description>Utitily for inspecting classpath resources</description>
 	
 	<build>
-
-		<finalName>rest</finalName>
-
 		<plugins>
 			<plugin>
 				<artifactId>maven-compiler-plugin</artifactId>
