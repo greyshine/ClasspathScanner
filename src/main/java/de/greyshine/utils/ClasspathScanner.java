@@ -90,10 +90,6 @@ public class ClasspathScanner {
 
 			};
 		});
-		classLoaders.add(ClassLoader.getSystemClassLoader());
-		classLoaders.add(Thread.currentThread().getContextClassLoader());
-
-		addClass(getClass());
 
 		addSystemPropertyPaths("java.class.path");
 	}

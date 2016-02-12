@@ -92,7 +92,6 @@ public class ClasspathScannerTest {
 		
 		final ClasspathScanner cps = ClasspathScanner.create();
 		cps.filterBeginResourceName("de.greyshine.utils");
-		cps.filterExcludeInnerClasses();
 		cps.filterTypeAnnotation(TestAnnotation.class);
 
 		Wrapper<Integer> c = new Wrapper<>(0);
@@ -108,7 +107,7 @@ public class ClasspathScannerTest {
 			}
 		});
 
-		Assert.assertTrue("" + c, c.value > 0);
+		Assert.assertTrue("" + c, c.value == 1);
 	}
 
 	@Test
@@ -132,7 +131,7 @@ public class ClasspathScannerTest {
 			}
 		});
 
-		Assert.assertTrue(c.value > 0);
+		Assert.assertTrue(c.value == 1);
 	}
 
 }
