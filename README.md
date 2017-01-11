@@ -3,6 +3,8 @@ Scanning and filtering the Java classpath.
 
 Goal: One class. No dependencies.
 
+Inspired from https://github.com/lukehutch/fast-classpath-scanner which I refactored and made it more compact and rewrote for my needs. I also added some functionalities.
+
 Features:
 
 * filter by class annotation
