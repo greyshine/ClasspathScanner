@@ -48,8 +48,11 @@ public class Main {
 
 
 run  
+
 `mvn clean test && java -cp target/test-classes:target/classes de.greyshine.utils.Main`
+
 which prints out  
+
 `Hello de.greyshine.utils.Main as class de.greyshine.utils.Main!`
 
 
